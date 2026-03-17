@@ -12,6 +12,7 @@ from dotenv import dotenv_values
 from mlflow.tracking import MlflowClient
 
 from .config import resolve_ce_sampling, validate_pointwise_critic_cfg
+from .data_utils.ml_1m_sessions import make_shifted_batch_from_rewards
 from .data_utils.sessions import make_shifted_batch_from_sessions
 from .metrics import ndcg_reward_from_logits
 from .training.sampling import sample_global_uniform_negatives, sample_uniform_negatives
@@ -104,15 +105,25 @@ def compute_baseline_ce_loss(
     total_loss = 0.0
     total_tokens = 0
 
-    for items_pad, is_buy_pad, lengths in session_loader:
-        step = make_shifted_batch_from_sessions(
-            items_pad,
-            is_buy_pad,
-            lengths,
-            state_size=int(state_size),
-            old_pad_item=int(item_num),
-            purchase_only=bool(purchase_only),
-        )
+    for items_pad, signal_pad, lengths in session_loader:
+        if torch.is_floating_point(signal_pad):
+            step = make_shifted_batch_from_rewards(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
+        else:
+            step = make_shifted_batch_from_sessions(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
         if step is None:
             continue
         states_x = step["states_x"].to(device, non_blocking=True)
@@ -275,25 +286,42 @@ def compute_sa2c_losses(
     discount_val = float(cfg.get("discount", 0.5))
     neg_default = int(cfg.get("neg", 10))
 
-    for items_pad, is_buy_pad, lengths in session_loader:
-        step = make_shifted_batch_from_sessions(
-            items_pad,
-            is_buy_pad,
-            lengths,
-            state_size=int(state_size),
-            old_pad_item=int(item_num),
-            purchase_only=bool(purchase_only),
-        )
+    for items_pad, signal_pad, lengths in session_loader:
+        if torch.is_floating_point(signal_pad):
+            step = make_shifted_batch_from_rewards(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
+        else:
+            step = make_shifted_batch_from_sessions(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
         if step is None:
             continue
         states_x = step["states_x"].to(device, non_blocking=True)
         actions = step["actions"].to(device, non_blocking=True).to(torch.long)
-        is_buy = step["is_buy"].to(device, non_blocking=True).to(torch.long)
+        reward_seq = step.get("reward", None)
+        is_buy = step.get("is_buy", None)
         valid_mask = step["valid_mask"].to(device, non_blocking=True)
         done_mask = step["done_mask"].to(device, non_blocking=True)
 
         action_flat = actions[valid_mask]
-        is_buy_flat = is_buy[valid_mask]
+        if reward_seq is not None:
+            reward_flat = reward_seq.to(device, non_blocking=True).to(torch.float32)[valid_mask]
+        elif is_buy is not None:
+            is_buy = is_buy.to(device, non_blocking=True).to(torch.long)
+            reward_flat = torch.where(is_buy[valid_mask] == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+        else:
+            raise RuntimeError("Shifted batch must contain either 'reward' or 'is_buy'")
         done_flat = done_mask[valid_mask].to(torch.float32)
         step_count = int(action_flat.numel())
         if step_count <= 0:
@@ -367,7 +395,7 @@ def compute_sa2c_losses(
                     else:
                         reward_flat = ndcg_reward_from_logits(ce_logits_c.detach(), action_flat)
             else:
-                reward_flat = torch.where(is_buy_flat == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+                reward_flat = reward_flat.to(torch.float32)
 
             if critic_use_pop_policy:
                 if ce_next_logits_c is None:
@@ -422,7 +450,7 @@ def compute_sa2c_losses(
                 with torch.no_grad():
                     reward_flat = ndcg_reward_from_logits(ce_flat.detach(), action_flat)
             else:
-                reward_flat = torch.where(is_buy_flat == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+                reward_flat = reward_flat.to(torch.float32)
 
             a_star = q_next_selector_flat.argmax(dim=1)
             q_tp1 = q_next_target_flat.gather(1, a_star[:, None]).squeeze(1)

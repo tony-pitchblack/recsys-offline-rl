@@ -5,6 +5,7 @@ import logging
 import numpy as np
 import torch
 
+from .data_utils.ml_1m_sessions import make_shifted_batch_from_rewards
 from .data_utils.sessions import make_shifted_batch_from_sessions
 from .utils import tqdm
 
@@ -120,6 +121,7 @@ def evaluate(
     ce_loss_vocab_size: int | None = None,
     ce_full_vocab_size: int | None = None,
     ce_vocab_pct: float | None = None,
+    aggregate_only: bool = False,
 ):
     total_clicks = 0.0
     total_purchase = 0.0
@@ -132,26 +134,35 @@ def evaluate(
     ndcg_purchase = [0.0, 0.0, 0.0, 0.0]
 
     model.eval()
-    for items_pad, is_buy_pad, lengths in tqdm(
+    for items_pad, signal_pad, lengths in tqdm(
         session_loader,
         desc=str(split),
         unit="batch",
         dynamic_ncols=True,
         leave=False,
     ):
-        step = make_shifted_batch_from_sessions(
-            items_pad,
-            is_buy_pad,
-            lengths,
-            state_size=int(state_size),
-            old_pad_item=int(item_num),
-            purchase_only=bool(purchase_only),
-        )
+        if torch.is_floating_point(signal_pad):
+            step = make_shifted_batch_from_rewards(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
+        else:
+            step = make_shifted_batch_from_sessions(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
         if step is None:
             continue
         states_x = step["states_x"].to(device, non_blocking=True)
         actions = step["actions"].to(device, non_blocking=True)
-        is_buy = step["is_buy"].to(device, non_blocking=True)
         valid_mask = step["valid_mask"].to(device, non_blocking=True)
 
         ce_logits_seq = extract_ce_logits_seq(model(states_x))
@@ -160,8 +171,11 @@ def evaluate(
 
         ce_logits = ce_logits_seq[valid_mask]
         action_t = actions[valid_mask]
-        is_buy_t = is_buy[valid_mask]
-        reward_t = torch.where(is_buy_t == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+        if "reward" in step:
+            reward_t = step["reward"].to(device, non_blocking=True).to(torch.float32)[valid_mask]
+        else:
+            is_buy_t = step["is_buy"].to(device, non_blocking=True)[valid_mask]
+            reward_t = torch.where(is_buy_t == 1, float(reward_buy), float(reward_click)).to(torch.float32)
 
         kmax = int(max(topk))
         vals, idx = torch.topk(ce_logits, k=kmax, dim=1, largest=True, sorted=False)
@@ -199,6 +213,7 @@ def evaluate(
         click[f"ndcg@{k}"] = float(ng_click)
         purchase[f"hr@{k}"] = float(hr_purchase)
         purchase[f"ndcg@{k}"] = float(ng_purchase)
+        overall[f"hr@{k}"] = float((hit_clicks[i] + hit_purchase[i]) / denom_all) if denom_all > 0 else 0.0
         overall[f"ndcg@{k}"] = float((ndcg_clicks[i] + ndcg_purchase[i]) / denom_all) if denom_all > 0 else 0.0
 
     logger = logging.getLogger(__name__)
@@ -216,20 +231,22 @@ def evaluate(
         ce_full_vocab_size=ce_full_vocab_size,
         ce_vocab_pct=ce_vocab_pct,
     )
-    logger.info("total clicks: %d, total purchase: %d", int(total_clicks), int(total_purchase))
-    for k in topk:
-        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        logger.info("clicks hr ndcg @ %d: %f, %f", k, float(click[f"hr@{k}"]), float(click[f"ndcg@{k}"]))
-        logger.info("purchase hr ndcg @ %d: %f, %f", k, float(purchase[f"hr@{k}"]), float(purchase[f"ndcg@{k}"]))
+    if bool(aggregate_only):
+        logger.info("total events: %d", int(denom_all))
+        for k in topk:
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            logger.info("overall hr ndcg @ %d: %f, %f", k, float(overall[f"hr@{k}"]), float(overall[f"ndcg@{k}"]))
+    else:
+        logger.info("total clicks: %d, total purchase: %d", int(total_clicks), int(total_purchase))
+        for k in topk:
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            logger.info("clicks hr ndcg @ %d: %f, %f", k, float(click[f"hr@{k}"]), float(click[f"ndcg@{k}"]))
+            logger.info("purchase hr ndcg @ %d: %f, %f", k, float(purchase[f"hr@{k}"]), float(purchase[f"ndcg@{k}"]))
     logger.info("#############################################################")
     logger.info("")
-
-    return {
-        "topk": topk,
-        "click": click,
-        "purchase": purchase,
-        "overall": overall,
-    }
+    if bool(aggregate_only):
+        return {"topk": topk, "overall": overall}
+    return {"topk": topk, "click": click, "purchase": purchase, "overall": overall}
 
 
 @torch.no_grad()
@@ -250,6 +267,7 @@ def evaluate_loo(
     ce_loss_vocab_size: int | None = None,
     ce_full_vocab_size: int | None = None,
     ce_vocab_pct: float | None = None,
+    aggregate_only: bool = False,
 ):
     total_clicks = 0.0
     total_purchase = 0.0
@@ -262,26 +280,35 @@ def evaluate_loo(
     ndcg_purchase = [0.0, 0.0, 0.0, 0.0]
 
     model.eval()
-    for items_pad, is_buy_pad, lengths in tqdm(
+    for items_pad, signal_pad, lengths in tqdm(
         session_loader,
         desc=str(split),
         unit="batch",
         dynamic_ncols=True,
         leave=False,
     ):
-        step = make_shifted_batch_from_sessions(
-            items_pad,
-            is_buy_pad,
-            lengths,
-            state_size=int(state_size),
-            old_pad_item=int(item_num),
-            purchase_only=bool(purchase_only),
-        )
+        if torch.is_floating_point(signal_pad):
+            step = make_shifted_batch_from_rewards(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
+        else:
+            step = make_shifted_batch_from_sessions(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
         if step is None:
             continue
         states_x = step["states_x"].to(device, non_blocking=True)
         actions = step["actions"].to(device, non_blocking=True)
-        is_buy = step["is_buy"].to(device, non_blocking=True)
         done_mask = step["done_mask"].to(device, non_blocking=True)
 
         ce_logits_seq = extract_ce_logits_seq(model(states_x))
@@ -290,8 +317,11 @@ def evaluate_loo(
 
         ce_logits = ce_logits_seq[done_mask]
         action_t = actions[done_mask]
-        is_buy_t = is_buy[done_mask]
-        reward_t = torch.where(is_buy_t == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+        if "reward" in step:
+            reward_t = step["reward"].to(device, non_blocking=True).to(torch.float32)[done_mask]
+        else:
+            is_buy_t = step["is_buy"].to(device, non_blocking=True)[done_mask]
+            reward_t = torch.where(is_buy_t == 1, float(reward_buy), float(reward_click)).to(torch.float32)
 
         kmax = int(max(topk))
         vals, idx = torch.topk(ce_logits, k=kmax, dim=1, largest=True, sorted=False)
@@ -329,6 +359,7 @@ def evaluate_loo(
         click[f"ndcg@{k}"] = float(ng_click)
         purchase[f"hr@{k}"] = float(hr_purchase)
         purchase[f"ndcg@{k}"] = float(ng_purchase)
+        overall[f"hr@{k}"] = float((hit_clicks[i] + hit_purchase[i]) / denom_all) if denom_all > 0 else 0.0
         overall[f"ndcg@{k}"] = float((ndcg_clicks[i] + ndcg_purchase[i]) / denom_all) if denom_all > 0 else 0.0
 
     logger = logging.getLogger(__name__)
@@ -346,20 +377,22 @@ def evaluate_loo(
         ce_full_vocab_size=ce_full_vocab_size,
         ce_vocab_pct=ce_vocab_pct,
     )
-    logger.info("total clicks: %d, total purchase: %d", int(total_clicks), int(total_purchase))
-    for k in topk:
-        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        logger.info("clicks hr ndcg @ %d: %f, %f", k, float(click[f"hr@{k}"]), float(click[f"ndcg@{k}"]))
-        logger.info("purchase hr ndcg @ %d: %f, %f", k, float(purchase[f"hr@{k}"]), float(purchase[f"ndcg@{k}"]))
+    if bool(aggregate_only):
+        logger.info("total events: %d", int(denom_all))
+        for k in topk:
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            logger.info("overall hr ndcg @ %d: %f, %f", k, float(overall[f"hr@{k}"]), float(overall[f"ndcg@{k}"]))
+    else:
+        logger.info("total clicks: %d, total purchase: %d", int(total_clicks), int(total_purchase))
+        for k in topk:
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            logger.info("clicks hr ndcg @ %d: %f, %f", k, float(click[f"hr@{k}"]), float(click[f"ndcg@{k}"]))
+            logger.info("purchase hr ndcg @ %d: %f, %f", k, float(purchase[f"hr@{k}"]), float(purchase[f"ndcg@{k}"]))
     logger.info("#############################################################")
     logger.info("")
-
-    return {
-        "topk": topk,
-        "click": click,
-        "purchase": purchase,
-        "overall": overall,
-    }
+    if bool(aggregate_only):
+        return {"topk": topk, "overall": overall}
+    return {"topk": topk, "click": click, "purchase": purchase, "overall": overall}
 
 
 @torch.no_grad()
@@ -381,6 +414,7 @@ def evaluate_loo_candidates(
     ce_loss_vocab_size: int | None = None,
     ce_full_vocab_size: int | None = None,
     ce_vocab_pct: float | None = None,
+    aggregate_only: bool = False,
 ):
     if sampled_negatives.ndim != 1:
         raise ValueError(f"sampled_negatives must have shape [N], got {tuple(sampled_negatives.shape)}")
@@ -396,26 +430,35 @@ def evaluate_loo_candidates(
     ndcg_purchase = [0.0, 0.0, 0.0, 0.0]
 
     model.eval()
-    for items_pad, is_buy_pad, lengths in tqdm(
+    for items_pad, signal_pad, lengths in tqdm(
         session_loader,
         desc=str(split),
         unit="batch",
         dynamic_ncols=True,
         leave=False,
     ):
-        step = make_shifted_batch_from_sessions(
-            items_pad,
-            is_buy_pad,
-            lengths,
-            state_size=int(state_size),
-            old_pad_item=int(item_num),
-            purchase_only=bool(purchase_only),
-        )
+        if torch.is_floating_point(signal_pad):
+            step = make_shifted_batch_from_rewards(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
+        else:
+            step = make_shifted_batch_from_sessions(
+                items_pad,
+                signal_pad,
+                lengths,
+                state_size=int(state_size),
+                old_pad_item=int(item_num),
+                purchase_only=bool(purchase_only),
+            )
         if step is None:
             continue
         states_x = step["states_x"].to(device, non_blocking=True)
         actions = step["actions"].to(device, non_blocking=True)
-        is_buy = step["is_buy"].to(device, non_blocking=True)
         done_mask = step["done_mask"].to(device, non_blocking=True)
 
         ce_logits_seq = extract_ce_logits_seq(model(states_x))
@@ -424,8 +467,11 @@ def evaluate_loo_candidates(
 
         ce_logits = ce_logits_seq[done_mask]
         action_t = actions[done_mask].to(torch.long)
-        is_buy_t = is_buy[done_mask]
-        reward_t = torch.where(is_buy_t == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+        if "reward" in step:
+            reward_t = step["reward"].to(device, non_blocking=True).to(torch.float32)[done_mask]
+        else:
+            is_buy_t = step["is_buy"].to(device, non_blocking=True)[done_mask]
+            reward_t = torch.where(is_buy_t == 1, float(reward_buy), float(reward_click)).to(torch.float32)
         if int(action_t.numel()) == 0:
             continue
 
@@ -469,6 +515,7 @@ def evaluate_loo_candidates(
         click[f"ndcg@{k}"] = float(ng_click)
         purchase[f"hr@{k}"] = float(hr_purchase)
         purchase[f"ndcg@{k}"] = float(ng_purchase)
+        overall[f"hr@{k}"] = float((hit_clicks[i] + hit_purchase[i]) / denom_all) if denom_all > 0 else 0.0
         overall[f"ndcg@{k}"] = float((ndcg_clicks[i] + ndcg_purchase[i]) / denom_all) if denom_all > 0 else 0.0
 
     logger = logging.getLogger(__name__)
@@ -486,20 +533,22 @@ def evaluate_loo_candidates(
         ce_full_vocab_size=ce_full_vocab_size,
         ce_vocab_pct=ce_vocab_pct,
     )
-    logger.info("total clicks: %d, total purchase: %d", int(total_clicks), int(total_purchase))
-    for k in topk:
-        logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        logger.info("clicks hr ndcg @ %d: %f, %f", k, float(click[f"hr@{k}"]), float(click[f"ndcg@{k}"]))
-        logger.info("purchase hr ndcg @ %d: %f, %f", k, float(purchase[f"hr@{k}"]), float(purchase[f"ndcg@{k}"]))
+    if bool(aggregate_only):
+        logger.info("total events: %d", int(denom_all))
+        for k in topk:
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            logger.info("overall hr ndcg @ %d: %f, %f", k, float(overall[f"hr@{k}"]), float(overall[f"ndcg@{k}"]))
+    else:
+        logger.info("total clicks: %d, total purchase: %d", int(total_clicks), int(total_purchase))
+        for k in topk:
+            logger.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+            logger.info("clicks hr ndcg @ %d: %f, %f", k, float(click[f"hr@{k}"]), float(click[f"ndcg@{k}"]))
+            logger.info("purchase hr ndcg @ %d: %f, %f", k, float(purchase[f"hr@{k}"]), float(purchase[f"ndcg@{k}"]))
     logger.info("#############################################################")
     logger.info("")
-
-    return {
-        "topk": topk,
-        "click": click,
-        "purchase": purchase,
-        "overall": overall,
-    }
+    if bool(aggregate_only):
+        return {"topk": topk, "overall": overall}
+    return {"topk": topk, "click": click, "purchase": purchase, "overall": overall}
 
 
 @torch.no_grad()
@@ -642,7 +691,7 @@ def evaluate_albert4rec_loo(
 
 def metrics_row(metrics: dict, kind: str):
     topk = metrics["topk"]
-    src = metrics[kind]
+    src = metrics.get(kind, {})
     row = {}
     for k in topk:
         row[f"hr@{k}"] = float(src.get(f"hr@{k}", 0.0))
@@ -655,6 +704,8 @@ def overall_row(metrics: dict):
     src = metrics["overall"]
     row = {}
     for k in topk:
+        if f"hr@{k}" in src:
+            row[f"hr@{k}"] = float(src.get(f"hr@{k}", 0.0))
         row[f"ndcg@{k}"] = float(src.get(f"ndcg@{k}", 0.0))
     return row
 
@@ -663,12 +714,26 @@ def summary_at_k_text(val_metrics: dict, test_metrics: dict, k: int):
     def g(m: dict, section: str, key: str):
         return float(m.get(section, {}).get(key, 0.0))
 
-    lines = [
-        f"overall val/ndcg@{k}={g(val_metrics, 'overall', f'ndcg@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'overall', f'ndcg@{k}'):.6f}",
-        f"click   val/hr@{k}={g(val_metrics, 'click', f'hr@{k}'):.6f} val/ndcg@{k}={g(val_metrics, 'click', f'ndcg@{k}'):.6f}  test/hr@{k}={g(test_metrics, 'click', f'hr@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'click', f'ndcg@{k}'):.6f}",
-        f"purchase val/hr@{k}={g(val_metrics, 'purchase', f'hr@{k}'):.6f} val/ndcg@{k}={g(val_metrics, 'purchase', f'ndcg@{k}'):.6f}  test/hr@{k}={g(test_metrics, 'purchase', f'hr@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'purchase', f'ndcg@{k}'):.6f}",
-        "",
-    ]
+    lines = []
+    if f"hr@{k}" in (val_metrics.get("overall") or {}):
+        lines.append(
+            f"overall val/hr@{k}={g(val_metrics, 'overall', f'hr@{k}'):.6f} val/ndcg@{k}={g(val_metrics, 'overall', f'ndcg@{k}'):.6f}  "
+            f"test/hr@{k}={g(test_metrics, 'overall', f'hr@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'overall', f'ndcg@{k}'):.6f}"
+        )
+    else:
+        lines.append(
+            f"overall val/ndcg@{k}={g(val_metrics, 'overall', f'ndcg@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'overall', f'ndcg@{k}'):.6f}"
+        )
+    if ("click" in val_metrics) and ("purchase" in val_metrics):
+        lines.append(
+            f"click   val/hr@{k}={g(val_metrics, 'click', f'hr@{k}'):.6f} val/ndcg@{k}={g(val_metrics, 'click', f'ndcg@{k}'):.6f}  "
+            f"test/hr@{k}={g(test_metrics, 'click', f'hr@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'click', f'ndcg@{k}'):.6f}"
+        )
+        lines.append(
+            f"purchase val/hr@{k}={g(val_metrics, 'purchase', f'hr@{k}'):.6f} val/ndcg@{k}={g(val_metrics, 'purchase', f'ndcg@{k}'):.6f}  "
+            f"test/hr@{k}={g(test_metrics, 'purchase', f'hr@{k}'):.6f} test/ndcg@{k}={g(test_metrics, 'purchase', f'ndcg@{k}'):.6f}"
+        )
+    lines.append("")
     return "\n".join(lines)
 
 

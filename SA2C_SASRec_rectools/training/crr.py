@@ -12,6 +12,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import RandomSampler
 
 from ..config import validate_crr_actor_cfg, validate_crr_critic_cfg
+from ..data_utils.ml_1m_sessions import make_shifted_batch_from_rewards
 from ..distributed import get_local_rank, get_world_size, is_distributed, is_rank0
 from ..data_utils.sessions import make_session_loader, make_shifted_batch_from_sessions
 from ..metrics import evaluate, get_metric_value, ndcg_reward_from_logits
@@ -173,21 +174,32 @@ def train_crr(
                 stop_training = True
                 break
 
-            items_pad, is_buy_pad, lengths = batch
-            step = make_shifted_batch_from_sessions(
-                items_pad,
-                is_buy_pad,
-                lengths,
-                state_size=int(state_size),
-                old_pad_item=int(item_num),
-                purchase_only=bool(purchase_only),
-            )
+            items_pad, signal_pad, lengths = batch
+            if torch.is_floating_point(signal_pad):
+                step = make_shifted_batch_from_rewards(
+                    items_pad,
+                    signal_pad,
+                    lengths,
+                    state_size=int(state_size),
+                    old_pad_item=int(item_num),
+                    purchase_only=bool(purchase_only),
+                )
+            else:
+                step = make_shifted_batch_from_sessions(
+                    items_pad,
+                    signal_pad,
+                    lengths,
+                    state_size=int(state_size),
+                    old_pad_item=int(item_num),
+                    purchase_only=bool(purchase_only),
+                )
             if step is None:
                 continue
 
             states_x = step["states_x"].to(device, non_blocking=pin_memory)
             actions = step["actions"].to(device, non_blocking=pin_memory).to(torch.long)
-            is_buy = step["is_buy"].to(device, non_blocking=pin_memory).to(torch.long)
+            reward_seq = step.get("reward", None)
+            is_buy = step.get("is_buy", None)
             valid_mask = step["valid_mask"].to(device, non_blocking=pin_memory)
             done_mask = step["done_mask"].to(device, non_blocking=pin_memory)
 
@@ -196,7 +208,13 @@ def train_crr(
                 continue
 
             action_flat = actions[valid_mask]
-            is_buy_flat = is_buy[valid_mask]
+            if reward_seq is not None:
+                reward_flat = reward_seq.to(device, non_blocking=pin_memory).to(torch.float32)[valid_mask]
+            elif is_buy is not None:
+                is_buy = is_buy.to(device, non_blocking=pin_memory).to(torch.long)
+                reward_flat = torch.where(is_buy[valid_mask] == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+            else:
+                raise RuntimeError("Shifted batch must contain either 'reward' or 'is_buy'")
             done_flat = done_mask[valid_mask].to(torch.float32)
 
             with torch.no_grad():
@@ -229,7 +247,7 @@ def train_crr(
                 with torch.no_grad():
                     reward_flat = ndcg_reward_from_logits(logits_curr.detach(), action_flat)
             else:
-                reward_flat = torch.where(is_buy_flat == 1, float(reward_buy), float(reward_click)).to(torch.float32)
+                reward_flat = reward_flat.to(torch.float32)
 
             a_star = logits_next.argmax(dim=1)
             if use_pointwise:

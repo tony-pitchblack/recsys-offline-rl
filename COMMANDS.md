@@ -124,6 +124,16 @@ CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_
 CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/yoochoose/baseline.yml --smoke-cpu --max_steps 64
 ```
 
+## ml_1m
+```bash
+source .venv/bin/activate
+uv pip install -r dependencies/requirements_torch.txt
+
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/ml_1m/baseline_multi.yml
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/ml_1m/default_multi.yml
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/ml_1m/baseline_multi.yml --smoke-cpu --max_steps 64
+```
+
 ## Optuna gridsearch (rectools)
 
 ```bash

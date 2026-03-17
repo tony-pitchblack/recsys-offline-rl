@@ -17,7 +17,9 @@ def resolve_dataset_root(dataset: str) -> Path:
         return repo_root / "RC15"
     if dataset == "retailrocket":
         return repo_root / "Kaggle"
-    raise ValueError("dataset must be one of: yoochoose | retailrocket")
+    if dataset == "ml_1m":
+        return repo_root
+    raise ValueError("dataset must be one of: yoochoose | retailrocket | ml_1m")
 
 
 __all__ = ["make_run_dir", "resolve_dataset_root"]

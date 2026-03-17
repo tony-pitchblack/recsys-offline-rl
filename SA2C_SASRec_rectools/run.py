@@ -30,7 +30,9 @@ from .config import (
 from .data_utils.bert4rec_loo import prepare_persrec_tc5_bert4rec_loo, prepare_sessions_bert4rec_loo
 from .data_utils.persrec_tc5 import prepare_persrec_tc5
 from .data_utils.albert4rec import make_albert4rec_loader
+from .data_utils.ml_1m_sessions import ML1MSessionDataset, make_ml1m_loader
 from .data_utils.sessions import SessionDataset, make_session_loader
+from .datasets import prepare_ml_1m_artifacts
 from .distributed import (
     barrier,
     ddp_cleanup,
@@ -117,6 +119,11 @@ def _worker_main(
     reward_fn = str(cfg.get("reward_fn", "click_buy"))
     if reward_fn not in {"click_buy", "ndcg"}:
         raise ValueError("reward_fn must be one of: click_buy | ndcg")
+    dataset_cfg = cfg.get("dataset", "retailrocket")
+    if str(dataset_cfg) == "ml_1m":
+        reward_cfg = cfg.get("reward") or {}
+        if str(reward_cfg.get("type", "rating_threshold")) != "rating_threshold":
+            raise ValueError("For dataset=ml_1m, reward.type must be rating_threshold")
     _ = resolve_train_target_mode(cfg)
     trainer = resolve_trainer(cfg)
     enable_sa2c = trainer in {"sa2c", "crr"}
@@ -137,7 +144,6 @@ def _worker_main(
         pointwise_critic_use, pointwise_critic_arch, pointwise_mlp_cfg = validate_pointwise_critic_cfg(cfg)
 
     repo_root = Path(__file__).resolve().parent.parent
-    dataset_cfg = cfg.get("dataset", "retailrocket")
     persrec_tc5 = is_persrec_tc5_dataset_cfg(dataset_cfg)
     plu_filter_raw = getattr(args, "plu_filter", None)
     if persrec_tc5:
@@ -315,6 +321,13 @@ def _worker_main(
                 limit_chunks_pct=limit_chunks_pct,
             )
     else:
+        if dataset_name == "ml_1m":
+            prepare_ml_1m_artifacts(
+                dataset_root=dataset_root,
+                data_rel=data_rel,
+                seed=int(seed),
+                state_size=int(cfg.get("state_size", 10)),
+            )
         data_directory = str(dataset_root / data_rel)
         data_statis_path = Path(data_directory) / "data_statis.df"
         pop_dict_path = Path(data_directory) / "pop_dict.txt"
@@ -372,6 +385,19 @@ def _worker_main(
 
     else:
         eval_fn = evaluate_loo if use_bert4rec_loo else evaluate
+    if dataset_name == "ml_1m":
+        eval_fn_base = eval_fn
+
+        def eval_fn(model, session_loader, reward_click, reward_buy, device, **kwargs):
+            return eval_fn_base(
+                model,
+                session_loader,
+                reward_click,
+                reward_buy,
+                device,
+                aggregate_only=True,
+                **kwargs,
+            )
 
     reward_click = float(cfg.get("r_click", 0.2))
     reward_buy = float(cfg.get("r_buy", 1.0))
@@ -413,7 +439,16 @@ def _worker_main(
             test_ds_s = 0.0
         else:
             t0 = time.perf_counter()
-            train_ds = SessionDataset(data_directory=data_directory, split_df_name="sampled_train.df")
+            if dataset_name == "ml_1m":
+                reward_cfg = cfg.get("reward") or {}
+                train_ds = ML1MSessionDataset(
+                    data_directory=data_directory,
+                    split_df_name="sampled_train.df",
+                    rating_threshold=float(reward_cfg.get("rating_threshold", 3.5)),
+                    rating_col=str(reward_cfg.get("rating_col", "rating")),
+                )
+            else:
+                train_ds = SessionDataset(data_directory=data_directory, split_df_name="sampled_train.df")
             train_ds_s = time.perf_counter() - t0
 
     num_sessions = int(len(train_ds))
@@ -428,7 +463,16 @@ def _worker_main(
 
     if (not persrec_tc5) and (not use_bert4rec_loo):
         t0 = time.perf_counter()
-        val_ds = SessionDataset(data_directory=data_directory, split_df_name="sampled_val.df")
+        if dataset_name == "ml_1m":
+            reward_cfg = cfg.get("reward") or {}
+            val_ds = ML1MSessionDataset(
+                data_directory=data_directory,
+                split_df_name="sampled_val.df",
+                rating_threshold=float(reward_cfg.get("rating_threshold", 3.5)),
+                rating_col=str(reward_cfg.get("rating_col", "rating")),
+            )
+        else:
+            val_ds = SessionDataset(data_directory=data_directory, split_df_name="sampled_val.df")
         val_ds_s = time.perf_counter() - t0
     t0 = time.perf_counter()
     if model_type == "albert4rec":
@@ -442,19 +486,38 @@ def _worker_main(
             shuffle=False,
         )
     else:
-        val_dl = make_session_loader(
-            val_ds,
-            batch_size=val_batch_size,
-            num_workers=val_num_workers,
-            pin_memory=pin_memory,
-            pad_item=item_num,
-            shuffle=False,
-        )
+        if dataset_name == "ml_1m":
+            val_dl = make_ml1m_loader(
+                val_ds,
+                batch_size=val_batch_size,
+                num_workers=val_num_workers,
+                pin_memory=pin_memory,
+                pad_item=item_num,
+                shuffle=False,
+            )
+        else:
+            val_dl = make_session_loader(
+                val_ds,
+                batch_size=val_batch_size,
+                num_workers=val_num_workers,
+                pin_memory=pin_memory,
+                pad_item=item_num,
+                shuffle=False,
+            )
     val_dl_s = time.perf_counter() - t0
 
     if (not persrec_tc5) and (not use_bert4rec_loo):
         t0 = time.perf_counter()
-        test_ds = SessionDataset(data_directory=data_directory, split_df_name="sampled_test.df")
+        if dataset_name == "ml_1m":
+            reward_cfg = cfg.get("reward") or {}
+            test_ds = ML1MSessionDataset(
+                data_directory=data_directory,
+                split_df_name="sampled_test.df",
+                rating_threshold=float(reward_cfg.get("rating_threshold", 3.5)),
+                rating_col=str(reward_cfg.get("rating_col", "rating")),
+            )
+        else:
+            test_ds = SessionDataset(data_directory=data_directory, split_df_name="sampled_test.df")
         test_ds_s = time.perf_counter() - t0
     t0 = time.perf_counter()
     if model_type == "albert4rec":
@@ -468,14 +531,24 @@ def _worker_main(
             shuffle=False,
         )
     else:
-        test_dl = make_session_loader(
-            test_ds,
-            batch_size=val_batch_size,
-            num_workers=val_num_workers,
-            pin_memory=pin_memory,
-            pad_item=item_num,
-            shuffle=False,
-        )
+        if dataset_name == "ml_1m":
+            test_dl = make_ml1m_loader(
+                test_ds,
+                batch_size=val_batch_size,
+                num_workers=val_num_workers,
+                pin_memory=pin_memory,
+                pad_item=item_num,
+                shuffle=False,
+            )
+        else:
+            test_dl = make_session_loader(
+                test_ds,
+                batch_size=val_batch_size,
+                num_workers=val_num_workers,
+                pin_memory=pin_memory,
+                pad_item=item_num,
+                shuffle=False,
+            )
     test_dl_s = time.perf_counter() - t0
 
     if is_distributed() and bool(gs_cfg.get("enable", False)):

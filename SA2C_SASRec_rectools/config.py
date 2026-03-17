@@ -32,6 +32,11 @@ def default_config() -> dict:
         "purchase_only": False,
         "train_target_mode": "one_step",
         "reward_fn": "click_buy",
+        "reward": {
+            "type": "rating_threshold",
+            "rating_col": "rating",
+            "rating_threshold": 3.5,
+        },
         "enable_sa2c": True,
         "crr": {
             "temperature": 1.0,
