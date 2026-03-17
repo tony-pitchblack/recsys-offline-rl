@@ -30,6 +30,7 @@ def default_config() -> dict:
         "sanity": False,
         "limit_chunks_pct": None,
         "purchase_only": False,
+        "train_target_mode": "one_step",
         "reward_fn": "click_buy",
         "enable_sa2c": True,
         "crr": {
@@ -352,6 +353,14 @@ def resolve_trainer(cfg: dict) -> str:
     return s
 
 
+def resolve_train_target_mode(cfg: dict) -> str:
+    raw = cfg.get("train_target_mode", "one_step")
+    s = str(raw).strip().lower()
+    if s not in {"one_step", "multi_position"}:
+        raise ValueError("train_target_mode must be one of: one_step | multi_position")
+    return s
+
+
 __all__ = [
     "default_config",
     "load_config",
@@ -363,5 +372,6 @@ __all__ = [
     "resolve_ce_sampling",
     "resolve_num_val_negative_samples",
     "resolve_trainer",
+    "resolve_train_target_mode",
 ]
 

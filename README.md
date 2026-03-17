@@ -39,6 +39,16 @@ We also test NDCG-based reward and ablate for purchase-only data.
 
 ![YooChoose (purchase-only)](results/plots/yoochoose/test_results_purchase_only.png)
 
+### Train (multi-position)
+
+```bash
+source .venv/bin/activate
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/yoochoose/baseline_multi.yml
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/yoochoose/default_multi.yml
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/retailrocket/baseline_multi.yml
+CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/retailrocket/default_multi.yml
+```
+
 ### Notes
 
 For full list of commands to reproduce experiments refer to `COMMANDS.md`
