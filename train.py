@@ -382,12 +382,15 @@ def _worker_main(
     pin_memory = True
 
     if use_bert4rec_loo:
+        reward_cfg = cfg.get("reward") or {}
         train_ds, val_ds, test_ds = prepare_sessions_bert4rec_loo(
             data_directory=data_directory,
             split_df_names=["sampled_train.df", "sampled_val.df", "sampled_test.df"],
             seed=int(cfg.get("seed", 0)),
             val_samples_num=int(val_split_samples_num),
             test_samples_num=int(test_split_samples_num),
+            rating_threshold=float(reward_cfg.get("rating_threshold", 3.5)),
+            rating_col=str(reward_cfg.get("rating_col", "rating")),
             limit_chunks_pct=limit_chunks_pct,
         )
         train_ds_s = 0.0

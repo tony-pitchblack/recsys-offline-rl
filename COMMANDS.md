@@ -116,7 +116,10 @@ uv pip install -r requirements.txt
 
 CUDA_VISIBLE_DEVICES=0 python train.py --config conf/ml_1m/baseline_multi.yml
 CUDA_VISIBLE_DEVICES=0 python train.py --config conf/ml_1m/default_multi.yml
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/ml_1m/baseline_multi_loo.yml
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/ml_1m/default_multi_loo.yml
 CUDA_VISIBLE_DEVICES=0 python train.py --config conf/ml_1m/baseline_multi.yml --smoke-cpu --max_steps 64
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/ml_1m/baseline_multi_loo.yml --smoke-cpu --max_steps 64
 ```
 
 ## Optuna gridsearch (rectools)

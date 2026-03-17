@@ -9,7 +9,6 @@ import torch
 from torch.utils.data import Dataset
 
 from core.distributed import barrier, is_distributed, is_rank0
-from .sessions import SessionDatasetFromDF
 
 
 def load_or_build_bert4rec_splits(
@@ -86,14 +85,37 @@ def prepare_sessions_bert4rec_loo(
     seed: int,
     val_samples_num: int,
     test_samples_num: int,
+    rating_threshold: float = 3.5,
+    rating_col: str = "rating",
     limit_chunks_pct: float | None = None,
 ) -> tuple[Dataset, Dataset, Dataset]:
     dfs = [pd.read_pickle(str(Path(data_directory) / n)) for n in list(split_df_names)]
     df = pd.concat(dfs, axis=0, ignore_index=True)
-    base_ds = SessionDatasetFromDF(df)
-
-    items_list = base_ds.items_list
-    is_buy_list = base_ds.is_buy_list
+    groups = df.groupby("session_id", sort=False)
+    items_list: list[torch.Tensor] = []
+    signal_list: list[torch.Tensor] = []
+    use_float_signal = False
+    has_is_buy = "is_buy" in df.columns
+    has_rating = str(rating_col) in df.columns
+    if not has_is_buy and not has_rating:
+        raise KeyError(
+            f"Expected either 'is_buy' or '{rating_col}' column in bert4rec_loo dataframe"
+        )
+    threshold = float(rating_threshold)
+    for _, group in groups:
+        if "timestamp" in group.columns:
+            group = group.sort_values("timestamp", kind="mergesort")
+        items = torch.from_numpy(group["item_id"].to_numpy(dtype=np.int64, copy=True))
+        if int(items.numel()) == 0:
+            continue
+        if has_is_buy:
+            signal = torch.from_numpy(group["is_buy"].to_numpy(dtype=np.int64, copy=True))
+        else:
+            ratings = torch.from_numpy(group[str(rating_col)].to_numpy(dtype=np.float32, copy=True))
+            signal = (ratings > threshold).to(torch.float32)
+            use_float_signal = True
+        items_list.append(items)
+        signal_list.append(signal)
     splits_root = Path(data_directory)
     if limit_chunks_pct is not None:
         if not (0.0 < float(limit_chunks_pct) <= 1.0):
@@ -104,7 +126,7 @@ def prepare_sessions_bert4rec_loo(
         n_keep = max(1, min(total, int(math.ceil(float(total) * float(limit_chunks_pct)))))
         splits_root = splits_root / f"limit_chunks={int(n_keep)}"
         items_list = list(items_list[: int(n_keep)])
-        is_buy_list = list(is_buy_list[: int(n_keep)])
+        signal_list = list(signal_list[: int(n_keep)])
 
     eligible = np.asarray([i for i, x in enumerate(items_list) if int(x.numel()) >= 3], dtype=np.int64)
     splits_path = splits_root / "bert4rec_eval" / "dataset_splits.npz"
@@ -128,11 +150,12 @@ def prepare_sessions_bert4rec_loo(
 
         def __getitem__(self, idx: int):
             items = items_list[int(idx)]
-            is_buy = is_buy_list[int(idx)]
+            signal = signal_list[int(idx)]
             n_drop = 2 if bool(val_mask[int(idx)]) else 1
             if int(items.numel()) <= int(n_drop):
-                return torch.empty((0,), dtype=torch.long), torch.empty((0,), dtype=torch.long)
-            return items[: -int(n_drop)], is_buy[: -int(n_drop)]
+                sig_dtype = torch.float32 if bool(use_float_signal) else torch.long
+                return torch.empty((0,), dtype=torch.long), torch.empty((0,), dtype=sig_dtype)
+            return items[: -int(n_drop)], signal[: -int(n_drop)]
 
     class _Eval(Dataset):
         def __init__(self, indices: np.ndarray, drop_last: int):
@@ -145,11 +168,11 @@ def prepare_sessions_bert4rec_loo(
         def __getitem__(self, i: int):
             idx = int(self.indices[int(i)])
             items = items_list[idx]
-            is_buy = is_buy_list[idx]
+            signal = signal_list[idx]
             if int(self.drop_last) > 0:
                 items = items[: -int(self.drop_last)]
-                is_buy = is_buy[: -int(self.drop_last)]
-            return items, is_buy
+                signal = signal[: -int(self.drop_last)]
+            return items, signal
 
     train_ds = _Train()
     val_ds = _Eval(val_idx, drop_last=1)
