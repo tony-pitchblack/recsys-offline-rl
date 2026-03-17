@@ -43,10 +43,10 @@ We also test NDCG-based reward and ablate for purchase-only data.
 
 ```bash
 source .venv/bin/activate
-CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/yoochoose/baseline_multi.yml
-CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/yoochoose/default_multi.yml
-CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/retailrocket/baseline_multi.yml
-CUDA_VISIBLE_DEVICES=0 python -m SA2C_SASRec_rectools --config conf/SA2C_SASRec_rectools/retailrocket/default_multi.yml
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/yoochoose/baseline_multi.yml
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/yoochoose/default_multi.yml
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/retailrocket/baseline_multi.yml
+CUDA_VISIBLE_DEVICES=0 python train.py --config conf/retailrocket/default_multi.yml
 ```
 
 ### Notes

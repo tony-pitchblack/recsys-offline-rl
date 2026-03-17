@@ -42,10 +42,6 @@ def _tqdm():
     return tqdm
 
 
-def _is_persrec_tc5_dataset(dataset_name: str) -> bool:
-    return str(dataset_name).startswith("persrec_tc5_")
-
-
 def _iter_result_pairs(root: Path):
     tqdm = _tqdm()
     clicks_paths = list(root.rglob("results_clicks.csv"))
@@ -72,10 +68,8 @@ def _force_eval_run_dir(*, script_name: str, run_dir: Path) -> None:
         raise FileNotFoundError(f"Missing config file in run dir: {run_dir}")
 
     repo_root = _repo_root()
-    if script_name == "SA2C_SASRec_rectools":
-        cmd = [sys.executable, "-m", "SA2C_SASRec_rectools", "--config", str(cfg_path), "--eval-only"]
-    elif script_name == "SA2C_SASRec_torch":
-        cmd = [sys.executable, str(repo_root / "SA2C_SASRec_torch.py"), "--config", str(cfg_path), "--eval-only"]
+    if script_name == "train":
+        cmd = [sys.executable, str(repo_root / "train.py"), "--config", str(cfg_path), "--eval-only"]
     else:
         raise ValueError(f"Unsupported script: {script_name}")
     subprocess.run(cmd, cwd=str(repo_root), check=True)
@@ -88,14 +82,6 @@ def _extract_group_and_config(*, script_name: str, script_root: Path, run_dir: P
         return None
 
     dataset = str(parts[0])
-    if script_name == "SA2C_SASRec_rectools" and _is_persrec_tc5_dataset(dataset):
-        if len(parts) < 3:
-            return None
-        eval_scheme = str(parts[1])
-        config_label = "/".join(parts[2:])
-        group_key = _GroupKey(dataset_name=dataset, eval_scheme=eval_scheme)
-        return group_key, config_label
-
     config_label = "/".join(parts[1:])
     group_key = _GroupKey(dataset_name=dataset, eval_scheme=None)
     return group_key, config_label
@@ -143,7 +129,7 @@ def _plot_group(
     except Exception as e:  # pragma: no cover
         raise RuntimeError("Missing dependency: matplotlib") from e
 
-    color_map = {"torch": "0.6", "rectools": "C3"}
+    color_map = {"rectools": "C3"}
     rows = list(rows)
 
     n_cfg = len({str(cfg) for cfg, *_ in rows})
@@ -167,7 +153,6 @@ def _plot_group(
             'sampled_loss = "use sampled softmax for actor & sample next-state Q-values for critic"',
             "",
             "Notes on implementations:",
-            'torch = "reimplementation of author\'s code w/ torch"',
             'rectools = "reimplementation of author\'s code w/ torch + use rectools SASRec model arch"',
         ]
     )
@@ -192,19 +177,12 @@ def _plot_group(
             by_cfg.setdefault(str(cfg), {})[str(src)] = float(val)
 
         y = list(range(len(configs)))
-        h = 0.35
-        offset = 0.20
+        h = 0.5
         bars = []
         for i, cfg in enumerate(configs):
             m = by_cfg.get(cfg, {})
-            if "torch" in m:
-                bars.extend(
-                    ax.barh(i - offset, float(m["torch"]), height=h, color=color_map["torch"])
-                )
             if "rectools" in m:
-                bars.extend(
-                    ax.barh(i + offset, float(m["rectools"]), height=h, color=color_map["rectools"])
-                )
+                bars.extend(ax.barh(i, float(m["rectools"]), height=h, color=color_map["rectools"]))
 
         ax.set_yticks(y, labels=configs)
         ax.invert_yaxis()
@@ -258,7 +236,6 @@ def _plot_group(
     axes[1].set_title("clicks test/ndcg@10")
 
     legend_handles = [
-        Patch(color=color_map["torch"], label="torch"),
         Patch(color=color_map["rectools"], label="rectools"),
         Line2D([0], [0], color="C0", linestyle="--", linewidth=1.2, label="paper SASRec"),
         Line2D([0], [0], color="C2", linestyle="--", linewidth=1.2, label="paper SASRec-SA2C"),
@@ -286,8 +263,6 @@ def _max_metric_for_dataset(dataset_name: str, values: list[float] | None) -> fl
         return float(values[0])
     if ds == "yoochoose":
         return float(values[1]) if len(values) > 1 else float(values[0])
-    if ds.startswith("persrec_tc5_"):
-        return float(values[2]) if len(values) > 2 else float(values[-1])
     return float(values[-1])
 
 
@@ -303,14 +278,14 @@ def _build_plots(
     tqdm = _tqdm()
     by_group: dict[_GroupKey, dict[str, dict[str, tuple[float, float, float]]]] = {}
 
-    for script_name in ("SA2C_SASRec_torch", "SA2C_SASRec_rectools"):
+    for script_name in ("train",):
         if only_script is not None and script_name != only_script:
             continue
         script_root = logs_root / script_name
         if not script_root.exists():
             continue
 
-        source = "torch" if script_name == "SA2C_SASRec_torch" else "rectools"
+        source = "rectools"
         if force_eval:
             for run_dir in _iter_run_dirs_with_best_model(script_root):
                 parsed = _extract_group_and_config(script_name=script_name, script_root=script_root, run_dir=run_dir)
@@ -355,7 +330,7 @@ def _build_plots(
         rows_purchase_only: list[tuple[str, float, float, str]] = []
         for cfg in sorted(cfg_map.keys()):
             rows_dst = rows_purchase_only if _is_purchase_only_config_label(cfg) else rows_normal
-            for src in ("torch", "rectools"):
+            for src in ("rectools",):
                 v = cfg_map.get(cfg, {}).get(src)
                 if v is None:
                     continue
@@ -395,7 +370,7 @@ def _build_plots(
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--script", default=None, choices=["SA2C_SASRec_torch", "SA2C_SASRec_rectools"])
+    p.add_argument("--script", default=None, choices=["train"])
     p.add_argument("--dataset", default=None)
     p.add_argument("--eval-scheme", default=None)
     p.add_argument(
@@ -408,7 +383,7 @@ def main() -> None:
         nargs="*",
         type=float,
         default=None,
-        help="Either a single float (applied to all datasets) or 3 floats: retailrocket yoochoose persrec_tc5.",
+        help="Either a single float (applied to all datasets) or per-dataset values in order.",
     )
     args = p.parse_args()
 

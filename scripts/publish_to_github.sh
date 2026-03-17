@@ -3,7 +3,7 @@ set -euo pipefail
 set -a; source .env; set +a
 
 : "${GITHUB_REPO_SSH:?Need GITHUB_REPO_SSH}"
-: "${PUBLIC_STRIP_PATH:=results/plots/persrec_tc5_2025-08-21/}"
+: "${PUBLIC_STRIP_PATH:=results/plots/}"
 
 workdir="${1:-/tmp/repo-public-mirror}"
 
