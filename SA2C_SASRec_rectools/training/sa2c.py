@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import RandomSampler
 
-from ..config import resolve_ce_sampling, validate_pointwise_critic_cfg
+from ..config import resolve_ce_sampling, resolve_train_target_mode, validate_pointwise_critic_cfg
 from ..data_utils.sessions import make_session_loader, make_shifted_batch_from_sessions
 from ..distributed import broadcast_int, get_local_rank, get_world_size, is_distributed, is_rank0
 from ..metrics import evaluate, get_metric_value, ndcg_reward_from_logits
@@ -107,6 +107,7 @@ def train_sa2c(
     on_val_end: Callable[[int, dict], None] | None = None,
 ) -> tuple[Path, Path | None]:
     logger = logging.getLogger(__name__)
+    train_target_mode = resolve_train_target_mode(cfg)
     with open(str(pop_dict_path), "r") as f:
         pop_dict = eval(f.read())
 
@@ -367,6 +368,7 @@ def train_sa2c(
                 state_size=int(state_size),
                 old_pad_item=int(item_num),
                 purchase_only=bool(purchase_only),
+                target_mode=str(train_target_mode),
             )
             if step is None:
                 continue

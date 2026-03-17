@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import RandomSampler
 
-from ..config import resolve_ce_sampling
+from ..config import resolve_ce_sampling, resolve_train_target_mode
 from ..distributed import get_local_rank, get_world_size, is_distributed, is_rank0
 from ..data_utils.sessions import make_session_loader, make_shifted_batch_from_sessions
 from ..metrics import evaluate, get_metric_value, ndcg_reward_from_logits
@@ -50,6 +50,7 @@ def train_baseline(
     on_val_end: Callable[[int, dict], None] | None = None,
 ):
     logger = logging.getLogger(__name__)
+    train_target_mode = resolve_train_target_mode(cfg)
     world_size = int(get_world_size())
     if is_distributed():
         num_batches = int(math.ceil(float(num_batches) / float(world_size)))
@@ -154,6 +155,7 @@ def train_baseline(
                 state_size=int(state_size),
                 old_pad_item=int(item_num),
                 purchase_only=bool(purchase_only),
+                target_mode=str(train_target_mode),
             )
             if step is None:
                 continue

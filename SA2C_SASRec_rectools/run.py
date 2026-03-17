@@ -21,6 +21,7 @@ from .config import (
     load_config,
     resolve_ce_sampling,
     resolve_num_val_negative_samples,
+    resolve_train_target_mode,
     resolve_trainer,
     validate_crr_actor_cfg,
     validate_crr_critic_cfg,
@@ -116,6 +117,7 @@ def _worker_main(
     reward_fn = str(cfg.get("reward_fn", "click_buy"))
     if reward_fn not in {"click_buy", "ndcg"}:
         raise ValueError("reward_fn must be one of: click_buy | ndcg")
+    _ = resolve_train_target_mode(cfg)
     trainer = resolve_trainer(cfg)
     enable_sa2c = trainer in {"sa2c", "crr"}
     pointwise_critic_use = False

@@ -95,6 +95,7 @@ def make_shifted_batch_from_sessions(
     state_size: int,
     old_pad_item: int,
     purchase_only: bool,
+    target_mode: str = "multi_position",
 ):
     bsz, lmax = items_pad.shape
     s = int(state_size)
@@ -135,9 +136,18 @@ def make_shifted_batch_from_sessions(
         valid_mask = valid_mask[keep]
         valid_counts = valid_counts[keep]
 
-    last_idx = (valid_counts - 1).clamp(min=0).to(torch.long)
+    idx_positions = torch.arange(s, device=actions.device, dtype=torch.long).unsqueeze(0).expand_as(valid_mask)
+    last_idx = (idx_positions * valid_mask.to(torch.long)).amax(dim=1)
     done_mask = torch.zeros_like(valid_mask)
     done_mask[torch.arange(int(actions.shape[0]), device=actions.device), last_idx] = True
+
+    mode = str(target_mode).strip().lower()
+    if mode == "one_step":
+        one_step_mask = torch.zeros_like(valid_mask)
+        one_step_mask[torch.arange(int(actions.shape[0]), device=actions.device), last_idx] = True
+        valid_mask = one_step_mask
+    elif mode != "multi_position":
+        raise ValueError("target_mode must be one of: one_step | multi_position")
 
     return {
         "states_x": states_x,
