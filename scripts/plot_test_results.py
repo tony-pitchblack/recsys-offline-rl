@@ -130,6 +130,7 @@ def _plot_group(
     rows: list[tuple[str, float, float, str]],
     out_path: Path,
     max_metric_value: float | None,
+    include_clicks: bool = True,
 ) -> None:
     try:
         import matplotlib.pyplot as plt
@@ -147,8 +148,18 @@ def _plot_group(
     rows = list(rows)
 
     n_cfg = len({str(cfg) for cfg, *_ in rows})
-    fig_h = max(6.0, 0.55 * max(n_cfg, 1) + 4.0)
-    fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(12, fig_h), height_ratios=[1.0, 1.0, 0.55])
+    subplot_count = 2 if include_clicks else 1
+    base_h = 2.5 if include_clicks else 1.5
+    min_h = 5.0 if include_clicks else 3.2
+    fig_h = max(min_h, 0.55 * max(n_cfg, 1) + base_h)
+    fig, axes = plt.subplots(
+        nrows=subplot_count,
+        ncols=1,
+        figsize=(12, fig_h),
+        height_ratios=[1.0] * subplot_count,
+    )
+    if subplot_count == 1:
+        axes = [axes]
     if " / " in title:
         ds_title, subtitle = title.split(" / ", 1)
     else:
@@ -156,21 +167,6 @@ def _plot_group(
     fig.suptitle(str(ds_title), fontsize=24, fontweight="bold")
     if subtitle:
         fig.text(0.5, 0.93, str(subtitle), ha="center", va="top", fontsize=14)
-
-    notes = "\n".join(
-        [
-            "Notes on config names:",
-            'default = "default SASRecSA2C"',
-            'baseline = "baseline SASRec"',
-            '*auto_warmup = "phase1 (warmup phase) early stopping on val/ndcg@10"',
-            'NO *auto_warmup = "hardcoded epochs for phase1 (warmup phase)"',
-            'sampled_loss = "use sampled softmax for actor & sample next-state Q-values for critic"',
-            "",
-            "Notes on implementations:",
-            'torch = "reimplementation of author\'s code w/ torch"',
-            'rectools = "reimplementation of author\'s code w/ torch + use rectools SASRec model arch"',
-        ]
-    )
 
     def add_paper_lines(ax, kind: str):
         ds = _PAPER_NDCG10.get(str(dataset_name))
@@ -254,8 +250,9 @@ def _plot_group(
     barh(axes[0], [(cfg, p, src) for cfg, _, p, src in rows], kind="purchase")
     axes[0].set_title("purchase test/ndcg@10")
 
-    barh(axes[1], [(cfg, c, src) for cfg, c, _, src in rows], kind="clicks")
-    axes[1].set_title("clicks test/ndcg@10")
+    if include_clicks:
+        barh(axes[1], [(cfg, c, src) for cfg, c, _, src in rows], kind="clicks")
+        axes[1].set_title("clicks test/ndcg@10")
 
     legend_handles = [
         Patch(color=color_map["torch"], label="torch"),
@@ -264,10 +261,6 @@ def _plot_group(
         Line2D([0], [0], color="C2", linestyle="--", linewidth=1.2, label="paper SASRec-SA2C"),
     ]
     axes[0].legend(handles=legend_handles, loc="lower right", frameon=False)
-
-    axes[2].set_title("Notes on configs/implementations")
-    axes[2].axis("off")
-    axes[2].text(0.0, 1.0, notes, va="top", ha="left", transform=axes[2].transAxes)
 
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -390,6 +383,7 @@ def _build_plots(
                 rows=rows_purchase_only,
                 out_path=out_dir / "test_results_purchase_only.png",
                 max_metric_value=vmax,
+                include_clicks=False,
             )
 
 
