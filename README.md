@@ -2,17 +2,21 @@
 
 This repo demonstrates Offline RL usage for Recommender System in e-commerce domain to optimize ranking metrics:
 - Seq2Seq backbone SASRec based on [RecTools](https://github.com/MobileTeleSystems/RecTools);
-- Actor-Critic RL architecture & training pipeline based on [**"Supervised Advantage Actor-Critic for Recommender Systems"**](https://arxiv.org/abs/2111.03474) paper
+- Actor-Critic RL architecture & training pipeline based on [**"Supervised Advantage Actor-Critic for Recommender Systems"**](https://arxiv.org/abs/2111.03474) paper.
 
 The model is evaluated on following e-commerce datasets (click & purchase interactions):
-- [**YooChoose**](https://www.kaggle.com/datasets/chadgostopp/recsys-challenge-2015)
-- [**RetailRocket**](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
 
-We also evaluate the model on purchase-only data for these datasets.
+- [**YooChoose**](https://www.kaggle.com/datasets/chadgostopp/recsys-challenge-2015);
+- [**RetailRocket**](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset).
 
-## RL pipeline overview
+Additional ablations:
+- Evaluate the model on purchase-only data;
+- Evaluate RL training for a *ranking-based reward function* (NDCG-like).
 
-The model is trained in two stages:
+## Offline RL pipeline overview
+First, a replay buffer is constructed from user's logged data.
+
+Then the model is trained in two stages:
 
 (a) **Warmup stage** (SNQN algorithm): pretrain critic using custom custom reward function (+1 for clicks, +5 for purchases) jointly with actor
 
