@@ -1,12 +1,14 @@
-# RecSys Offline RL
+# RecSys Offline RL for e-commerce
 
-This repo demonstrates Offline RL usage for e-com data:
+This repo demonstrates Offline RL usage for Recommender System in e-commerce domain to optimize ranking metrics:
 - Seq2Seq backbone SASRec based on [RecTools](https://github.com/MobileTeleSystems/RecTools);
-- Actor-Critic RL architecture based on [**"Supervised Advantage Actor-Critic for Recommender Systems"**](https://arxiv.org/abs/2111.03474) paper
+- Actor-Critic RL architecture & training pipeline based on [**"Supervised Advantage Actor-Critic for Recommender Systems"**](https://arxiv.org/abs/2111.03474) paper
 
-We use **YooChoose** and **RetailRocket** datasets which by default contain both clicks and purchases.
+The model is evaluated on following e-commerce datasets (click & purchase interactions):
+- [**YooChoose**](https://www.kaggle.com/datasets/chadgostopp/recsys-challenge-2015)
+- [**RetailRocket**](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
 
-We also test on purchase-only data for these datasets.
+We also evaluate the model on purchase-only data for these datasets.
 
 ## RL pipeline overview
 
@@ -23,8 +25,8 @@ The model is trained in two stages:
 ## Results
 
 - [Clicks and purchases results](#clicks-and-purchases-results)
-  - [RetailRocket (clicks + purchases)](#retailrocket-clicks--purchases)
-  - [YooChoose (clicks + purchases)](#yoochoose-clicks--purchases)
+  - [RetailRocket (clicks & purchases)](#retailrocket-clicks--purchases)
+  - [YooChoose (clicks & purchases)](#yoochoose-clicks--purchases)
 - [Purchase-only results](#purchase-only-results)
   - [RetailRocket (purchase-only)](#retailrocket-purchase-only)
   - [YooChoose (purchase-only)](#yoochoose-purchase-only)
