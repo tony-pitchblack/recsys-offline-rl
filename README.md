@@ -10,8 +10,8 @@ The model is evaluated on following e-commerce datasets (click & purchase intera
 - [**RetailRocket**](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset).
 
 Additional ablations:
-- Evaluate the model on purchase-only data;
-- Evaluate RL training for a *ranking-based reward function* (NDCG-like).
+- Train & evaluate the model on purchase-only data;
+- Train & evaluate the model with *ranking-based reward function* (NDCG-like).
 
 ## Offline RL pipeline overview
 First, a replay buffer is constructed from user's logged data.
