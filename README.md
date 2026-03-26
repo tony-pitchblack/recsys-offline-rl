@@ -2,7 +2,7 @@
 
 This repo demonstrates Offline RL usage for e-com data:
 - Seq2Seq backbone SASRec based on [RecTools](https://github.com/MobileTeleSystems/RecTools);
-- Actor-Critic RL architecture based on [arxiv](https://arxiv.org/abs/2111.03474) paper **"Supervised Advantage Actor-Critic for Recommender Systems"**
+- Actor-Critic RL architecture based on [**"Supervised Advantage Actor-Critic for Recommender Systems"**](https://arxiv.org/abs/2111.03474) paper
 
 We use **YooChoose** and **RetailRocket** datasets which by default contain both clicks and purchases.
 
