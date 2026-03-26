@@ -16,7 +16,7 @@ The model is trained in two stages:
 
 (b) **Finetuning stage** (SA2C algorithm): regularize actor's policy with critic's Q-value estimates
 
-*The data is split into train/val/test in 80:10:10 ratio, metrics are reported for test splits*
+*The data is split into train/val/test in 80:10:10 ratio, metrics are reported for test split*
 
 ![SQN and SA2C](results/misc/snqn_sa2c.png)
 
