@@ -37,11 +37,11 @@ Then the model is trained in two stages:
 
 ### Clicks and purchases results
 
-#### RetailRocket (clicks + purchases)
+#### RetailRocket (clicks & purchases)
 
 ![RetailRocket](results/plots/retailrocket/test_results.png)
 
-#### YooChoose (clicks + purchases)
+#### YooChoose (clicks & purchases)
 
 ![YooChoose](results/plots/yoochoose/test_results.png)
 
