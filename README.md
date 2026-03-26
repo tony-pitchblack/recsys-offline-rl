@@ -56,7 +56,7 @@ Then the model is trained in two stages:
 ![YooChoose (purchase-only)](results/plots/yoochoose/test_results_purchase_only.png)
 
 
-### Notes
+## Notes
 
 For full list of commands to reproduce experiments refer to `COMMANDS.md`
 
