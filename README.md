@@ -18,9 +18,9 @@ First, a replay buffer is constructed from user's logged data.
 
 Then the model is trained in two stages:
 
-(a) **Warmup stage** (SNQN algorithm): pretrain critic jointly with actor via a reward function;
+- (a) **Warmup stage** (SNQN algorithm): pretrain critic jointly with actor via a reward function;
 
-(b) **Finetuning stage** (SA2C algorithm): regularize actor's policy with critic's Q-value estimates.
+- (b) **Finetuning stage** (SA2C algorithm): regularize actor's policy with critic's Q-value estimates.
 
 *The data is split into train/val/test in 80:10:10 ratio, metrics are reported for test split*
 
