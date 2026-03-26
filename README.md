@@ -22,21 +22,20 @@ The model is trained in two stages:
 
 ## Results
 
-  - [Clicks and puchases results](#clicks-and-puchases-results)
-    - [RetailRocket (all events)](#retailrocket-all-events)
-    - [YooChoose (all events)](#yoochoose-all-events)
-  - [Purchase-only results](#purchase-only-results)
-    - [RetailRocket (purchase-only)](#retailrocket-purchase-only)
-    - [YooChoose (purchase-only)](#yoochoose-purchase-only)
+- [Clicks and purchases results](#clicks-and-purchases-results)
+  - [RetailRocket (clicks + purchases)](#retailrocket-clicks--purchases)
+  - [YooChoose (clicks + purchases)](#yoochoose-clicks--purchases)
+- [Purchase-only results](#purchase-only-results)
+  - [RetailRocket (purchase-only)](#retailrocket-purchase-only)
+  - [YooChoose (purchase-only)](#yoochoose-purchase-only)
 
+### Clicks and purchases results
 
-### Clicks and puchases results
-
-#### RetailRocket (all events)
+#### RetailRocket (clicks + purchases)
 
 ![RetailRocket](results/plots/retailrocket/test_results.png)
 
-#### YooChoose (all events)
+#### YooChoose (clicks + purchases)
 
 ![YooChoose](results/plots/yoochoose/test_results.png)
 
