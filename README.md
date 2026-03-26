@@ -11,7 +11,20 @@ The model is evaluated on following e-commerce datasets (click & purchase intera
 
 Additional ablations:
 - Train & evaluate the model on purchase-only data;
-- Train & evaluate the model with *ranking-based reward function* (NDCG-like).
+- Train & evaluate the model with *ranking NDCG-based reward function*
+
+*Scalar reward:*
+```text
+reward = 1, if action is a click
+reward = 5, if action is a purchase
+```
+
+*NDCG-based reward:*
+```text
+reward_ndcg = 1 / log2(rank + 1)
+rank = 1 + number of candidate items with logit > target_item_logit
+```
+where `target_item_logit` is the model logit for the observed item.
 
 ## Offline RL pipeline overview
 First, a replay buffer is constructed from user's logged data.
@@ -32,6 +45,7 @@ Main observations:
 1. Switching the backbone to RecTools yields larger improvements than RL finetuning in the evaluated setups.
 2. The effect of RL finetuning is not consistent across backbones and datasets.
 3. RL finetuning provides smaller gains in the purchase-only setting than in the clicks-and-purchases setting.
+4. NDCG-based reward function in purchse-only setting does not significantly improve over regular scalar reward function
 
 *We report `NDCG@10` metric separately for clicks and purchases. Note that in `clicks & puchases` setting the model is still trained on both clicks and purchases data despite the metrics being reported separately.*
 
