@@ -1,14 +1,24 @@
-# Supervised Advantage Actor-Critic (SA2C)
+# RecSys Offline RL
 
-## Overview
+This repo demonstrates Offline RL usage for e-com data:
+- Seq2Seq backbone SASRec based on [RecTools](https://github.com/MobileTeleSystems/RecTools);
+- Actor-Critic RL architecture based on [arxiv](https://arxiv.org/abs/2111.03474) paper **"Supervised Advantage Actor-Critic for Recommender Systems"**
 
-This repo reproduces results of paper [SA2C](https://arxiv.org/abs/2111.03474) using SASRec implementation based on [RecTools](https://github.com/MobileTeleSystems/RecTools).
+We use **YooChoose** and **RetailRocket** datasets which by default contain both clicks and purchases.
 
-We also test NDCG-based reward and ablate for purchase-only data.
+We also test on purchase-only data for these datasets.
+
+## RL pipeline overview
+
+The model is trained in two stages:
+
+(a) **Warmup stage** (SNQN algorithm): pretrain critic using custom custom reward function (+1 for clicks, +5 for purchases) jointly with actor
+
+(b) **Finetuning stage** (SA2C algorithm): regularize actor's policy with critic's Q-value estimates
 
 ![SQN and SA2C](results/misc/snqn_sa2c.png)
 
-## Contents
+## Results
 
   - [Clicks and puchases results](#clicks-and-puchases-results)
     - [RetailRocket (all events)](#retailrocket-all-events)
@@ -16,7 +26,6 @@ We also test NDCG-based reward and ablate for purchase-only data.
   - [Purchase-only results](#purchase-only-results)
     - [RetailRocket (purchase-only)](#retailrocket-purchase-only)
     - [YooChoose (purchase-only)](#yoochoose-purchase-only)
-  - [Notes](#notes)
 
 
 ### Clicks and puchases results
